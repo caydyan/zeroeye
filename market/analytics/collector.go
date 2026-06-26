@@ -15,12 +15,9 @@ package analytics
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -304,6 +301,7 @@ type Collector struct {
 	dropped       int64
 	collectors    []MetricCollector
 	enricher      func(*MetricSample)
+	running       bool
 }
 
 // MetricCollector is an interface for sub-collectors that gather
@@ -462,7 +460,20 @@ func (c *Collector) RecordHistogram(name string, value float64, tags ...MetricTa
 // goroutines, causing duplicate flushes. This is a known issue.
 // TODO: Make Start() idempotent.
 func (c *Collector) Start(ctx context.Context) {
+	c.mu.Lock()
+	if c.running {
+		c.mu.Unlock()
+		return
+	}
+	c.running = true
+	c.mu.Unlock()
+
 	go func() {
+		defer func() {
+			c.mu.Lock()
+			c.running = false
+			c.mu.Unlock()
+		}()
 		// Tick immediately to flush any bootstrapped metrics
 		c.flush(ctx)
 		ticker := time.NewTicker(c.flushInterval)
