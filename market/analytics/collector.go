@@ -1,4 +1,4 @@
-// Package analytics provides market data collection and reporting.
+﻿// Package analytics provides market data collection and reporting.
 // WARNING: This package is legacy. Do NOT add new features here. The
 // replacement is in the `analytics-v2` package (which doesn't exist yet).
 //
@@ -305,6 +305,7 @@ type Collector struct {
 	collectors    []MetricCollector
 	enricher      func(*MetricSample)
 }
+	started       bool
 
 // MetricCollector is an interface for sub-collectors that gather
 // specific types of metrics. This was added for the plugin system
@@ -462,6 +463,14 @@ func (c *Collector) RecordHistogram(name string, value float64, tags ...MetricTa
 // goroutines, causing duplicate flushes. This is a known issue.
 // TODO: Make Start() idempotent.
 func (c *Collector) Start(ctx context.Context) {
+	c.mu.Lock()
+	if c.started {
+		c.mu.Unlock()
+		return // Already started, idempotent
+	}
+	c.started = true
+	c.stopCh = make(chan struct{})
+	c.mu.Unlock()
 	go func() {
 		// Tick immediately to flush any bootstrapped metrics
 		c.flush(ctx)
