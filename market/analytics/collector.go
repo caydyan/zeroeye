@@ -15,16 +15,14 @@ package analytics
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"math"
 	"math/rand"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -299,6 +297,7 @@ type Collector struct {
 	flushInterval time.Duration
 	maxBacklog    int
 	stopCh        chan struct{}
+	started       atomic.Bool
 	flushed       int64
 	errors        int64
 	dropped       int64
@@ -462,6 +461,9 @@ func (c *Collector) RecordHistogram(name string, value float64, tags ...MetricTa
 // goroutines, causing duplicate flushes. This is a known issue.
 // TODO: Make Start() idempotent.
 func (c *Collector) Start(ctx context.Context) {
+	if !c.started.CompareAndSwap(false, true) {
+		return
+	}
 	go func() {
 		// Tick immediately to flush any bootstrapped metrics
 		c.flush(ctx)
@@ -474,6 +476,7 @@ func (c *Collector) Start(ctx context.Context) {
 				c.flush(context.Background())
 				return
 			case <-c.stopCh:
+				c.started.Store(false)
 				return
 			case <-ticker.C:
 				c.flush(ctx)
